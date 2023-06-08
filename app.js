@@ -6,13 +6,26 @@ const ejs = require("ejs");
 const mongoose = require("mongoose");
 // const encrypt = require("mongoose-encryption"); Level 2
 // const md5 = require("md5"); Level 3
-const bcrypt = require("bcrypt");
-const saltRounds = 10;
+// const bcrypt = require("bcrypt"); Level 4
+// const saltRounds = 10;
+const session = require("express-session");
+const passport = require("passport");
+const passportLocalMongoose = require("passport-local-mongoose");
+
 
 const app = express();
 app.use(bodyParser.urlencoded({extended: true}));
 app.set("view engine", "ejs");
 app.use(express.static("public"));
+
+app.use(session({
+    secret: "This is my secret.",
+    resave: false,
+    saveUninitialized: false
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
 
 
 mongoose.connect("mongodb://localhost:27017/userDB");
@@ -22,10 +35,14 @@ const UserSchema = new mongoose.Schema({
     password: String
 });
 
-
 // UserSchema.plugin(encrypt, {secret: process.env.SECRET, encryptedFields: ["password"]});
+UserSchema.plugin(passportLocalMongoose);
 
 const User = mongoose.model("User", UserSchema);
+
+passport.use(User.createStrategy());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
 
 
 app.get("/", function(req, res){
@@ -40,53 +57,60 @@ app.get("/register", function(req, res){
     res.render("register");
 });
 
-app.post("/register", function(req, res){
-
-
-    // User.findOne({email: req.body.email}).then((result) => {
-    //     if ( result ) {
-    //         console.log("Email already exists. Go to login page");
-    //         res.redirect("/login");
-    //     } else {
-        bcrypt.hash(req.body.password, saltRounds, function(err, hash){
-            console.log("This is new registration");
-            const newUser = new User({
-                email: req.body.email,
-                password: hash
-            });
-            newUser.save().then(() => {
-                console.log("Register successfully");
-                res.render("secrets");
-            }).catch((error) => {
-                console.log(error);
-            });
-        });
-
-    //     }
-    // });
+app.get("/secrets", function(req, res){
+    // console.log("redirected to secrets");
+    if (req.isAuthenticated()) {
+        // console.log("I'm in secrets");
+        res.render("secrets");
+    } else {
+        // console.log("Why I'm here?");
+        res.redirect("/login");
+    }
 });
 
-app.post("/login", function(req, res){
-    const email = req.body.email;
-    const password = req.body.password;
-    User.findOne({email: email}).then((foundUser) => {
-        console.log(foundUser);
-        bcrypt.compare(password, foundUser.password, function(err, result){
-            if ( result === true ) {
-                res.render("secrets");
-            } else {
-                console.log("Incorrect email or password");
-                res.redirect("/login");
-            }
-        });
+app.get("/logout", function(req, res){
+    req.logout((err) => {
+        if ( err ) {
+            console.log(err);
+        } else {
+            res.redirect("/");
+        }
     });
 });
 
+app.post("/register", function(req, res){
+    // console.log("In register page");
+    User.register({username: req.body.username}, req.body.password, function(err, user){
+        if ( err ){
+            console.log(err);
+            // console.log("register fail");
+            res.redirect("/register");
+        } else {
+            passport.authenticate("local")(req, res, function(){
+                // console.log("register ok");
+                res.redirect("/secrets");
+            });
+        }
+    });
+});
 
+app.post("/login", function(req, res){
 
+    const user = new User({
+        username: req.body.username,
+        password: req.body.password
+    });
 
-
-
+    req.login(user, function(err){
+        if (err){
+            console.log(err);
+        } else {
+            passport.authenticate("local")(req, res, function(){
+                res.redirect("/secrets");
+            });
+        }
+    });
+});
 
 app.listen(3000, function(){
     console.log("Server is started on port 3000");
