@@ -4,8 +4,10 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
 const mongoose = require("mongoose");
-// const encrypt = require("mongoose-encryption");
-const md5 = require("md5");
+// const encrypt = require("mongoose-encryption"); Level 2
+// const md5 = require("md5"); Level 3
+const bcrypt = require("bcrypt");
+const saltRounds = 10;
 
 const app = express();
 app.use(bodyParser.urlencoded({extended: true}));
@@ -46,33 +48,37 @@ app.post("/register", function(req, res){
     //         console.log("Email already exists. Go to login page");
     //         res.redirect("/login");
     //     } else {
+        bcrypt.hash(req.body.password, saltRounds, function(err, hash){
             console.log("This is new registration");
             const newUser = new User({
                 email: req.body.email,
-                password: md5(req.body.password)
+                password: hash
             });
             newUser.save().then(() => {
                 console.log("Register successfully");
                 res.render("secrets");
-            }).catch((err) => {
-                console.log(err);
+            }).catch((error) => {
+                console.log(error);
             });
+        });
+
     //     }
     // });
 });
 
 app.post("/login", function(req, res){
     const email = req.body.email;
-    const password = md5(req.body.password);
-
-    User.findOne({email: email}).then((result) => {
-        console.log(result);
-        if ( result.password === password ) {
-            res.render("secrets");
-        } else {
-            console.log("Incorrect email or password");
-            res.redirect("/login");
-        }
+    const password = req.body.password;
+    User.findOne({email: email}).then((foundUser) => {
+        console.log(foundUser);
+        bcrypt.compare(password, foundUser.password, function(err, result){
+            if ( result === true ) {
+                res.render("secrets");
+            } else {
+                console.log("Incorrect email or password");
+                res.redirect("/login");
+            }
+        });
     });
 });
 
