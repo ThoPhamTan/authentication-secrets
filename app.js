@@ -11,6 +11,8 @@ const mongoose = require("mongoose");
 const session = require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const findOrCreate = require("mongoose-findorcreate");
 
 
 const app = express();
@@ -32,22 +34,68 @@ mongoose.connect("mongodb://localhost:27017/userDB");
 
 const UserSchema = new mongoose.Schema({
     email: String,
-    password: String
+    password: String,
+    googleId: String
 });
 
 // UserSchema.plugin(encrypt, {secret: process.env.SECRET, encryptedFields: ["password"]});
 UserSchema.plugin(passportLocalMongoose);
+UserSchema.plugin(findOrCreate);
 
 const User = mongoose.model("User", UserSchema);
 
 passport.use(User.createStrategy());
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+passport.serializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, {
+        id: user.id,
+        username: user.username,
+        picture: user.picture
+      });
+    });
+  });
+  
+  passport.deserializeUser(function(user, cb) {
+    process.nextTick(function() {
+      return cb(null, user);
+    });
+  });
 
+passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
+  },
+    function(accessToken, refreshToken, profile, cb){
+        console.log(profile);
+        User.findOrCreate({ googleId: profile.id }, function(err, user){
+            return cb(err, user);
+        });
+    }
+));
 
 app.get("/", function(req, res){
     res.render("home");
 });
+
+app.get("/auth/google",
+    passport.authenticate("google", { scope: ["profile"] })
+);
+
+app.get("/auth/google/secrets", 
+    passport.authenticate("google", { failureRedirect: "/login" }),
+    function(req, res) {
+        console.log("authen ok. redirect to secrets page");
+        try{
+            res.redirect("/secrets");
+        }
+        catch(err) {
+            console.log(err);
+        }
+        // res.render("secrets");
+    }
+);
 
 app.get("/login", function(req, res){
     res.render("login");
@@ -58,12 +106,12 @@ app.get("/register", function(req, res){
 });
 
 app.get("/secrets", function(req, res){
-    // console.log("redirected to secrets");
+    console.log("redirected to secrets");
     if (req.isAuthenticated()) {
-        // console.log("I'm in secrets");
+        console.log("I'm in secrets");
         res.render("secrets");
     } else {
-        // console.log("Why I'm here?");
+        console.log("Why I'm here?");
         res.redirect("/login");
     }
 });
